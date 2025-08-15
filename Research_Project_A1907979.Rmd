@@ -1,0 +1,171 @@
+---
+title: "Research Project"
+author: "Deekshitha Goud Podeti"
+date: "2025-08-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r}
+pacman::p_load(tidyverse, dplyr, readr, here, sf, tmap, corrplot)
+packageVersion("tmap")
+```
+# loading the dataset.
+
+```{r}
+# Load packages
+library(tidyverse)
+library(sf)
+library(tmap)
+library(here)
+
+# Step 1: Load and joining data
+year_msoa_grocery <- read_csv(here("data/year_msoa_grocery.csv")) %>%
+  rename(msoa_code = area_id)
+
+msoas <- st_read(here("data/statistical-gis-boundaries-london/statistical-gis-boundaries-london/ESRI/MSOA_2011_London_gen_MHW.shp")) %>%
+  rename(msoa_code = MSOA11CD, msoa_name = MSOA11NM)
+
+tesco_and_msoas <- left_join(msoas, year_msoa_grocery, by = "msoa_code")
+```
+
+
+# Creating a Model 
+
+```{r}
+full_model <- lm(
+  energy_density ~ avg_age + people_per_sq_km + `age_65+` + man_day + transaction_days +
+    num_transactions + population + male + female +
+    f_readymade + f_wine + f_soft_drinks + f_fruit_veg + f_sweets +
+    f_meat_red + f_dairy + f_eggs + f_fish + f_grains + f_poultry + f_water,
+  data = tesco_and_msoas
+)
+summary(full_model)
+
+```
+
+
+# Identifying Positive predictors.
+
+```{r}
+# --- Libraries
+library(dplyr)
+library(broom)
+library(ggplot2)
+
+# --- Create output folder (if it doesn't exist)
+dir.create("figures", showWarnings = FALSE)
+
+# --- Tidy coefficients
+model_coef <- tidy(full_model)
+
+model_coef_clean <- model_coef %>%
+  filter(!is.na(estimate), term != "(Intercept)") %>%
+  mutate(
+    # nicer labels (edit/extend as needed)
+    label = dplyr::recode(term,
+      f_readymade   = "Ready‑made meals",
+      f_wine        = "Wine",
+      f_sweets      = "Sweets",
+      f_fish        = "Fish",
+      f_grains      = "Grains",
+      f_fruit_veg   = "Fruit & veg",
+      f_soft_drinks = "Soft drinks",
+      f_poultry     = "Poultry",
+      f_dairy       = "Dairy",
+      f_eggs        = "Eggs",
+      f_meat_red    = "Red meat",
+      f_water       = "Water",
+      avg_age       = "Average age",
+      people_per_sq_km = "Population density",
+      male          = "Male proportion",
+      .default      = term
+    ),
+    direction = ifelse(estimate > 0, "Positive", "Negative"),
+    # order by absolute magnitude
+    label = reorder(label, abs(estimate))
+  )
+
+# --- Plot (object so we can save it twice)
+p_coef <- ggplot(model_coef_clean, aes(x = label, y = estimate, fill = direction)) +
+  geom_col(width = 0.75) +
+  coord_flip() +
+  scale_fill_manual(values = c("Positive" = "#D55E00", "Negative" = "#009E73")) + # CB-friendly
+  labs(
+    title = "Regression coefficients (full model)",
+    x = "Predictor",
+    y = "Coefficient estimate",
+    fill = "Effect"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+
+# --- Save to PDF (best for LaTeX) and PNG (for slides)
+ggsave("figures/coe.pdf", plot = p_coef, width = 7, height = 5, device = cairo_pdf)
+ggsave("figures/coe.png", plot = p_coef, width = 7, height = 5, dpi = 300)
+```
+
+
+
+# Creating Spaital maps for positive predectors. 
+
+```{r}
+library(tidyverse)
+library(sf)
+library(tmap)
+
+# List of variables with positive coefficients, including avg_age
+positive_vars <- c("f_readymade", "f_wine", "f_sweets", "f_fish", "f_grains",
+                   "f_fruit_veg", "f_soft_drinks", "f_poultry", "f_dairy", "avg_age")
+
+# Replace NA values with 0 (optional - only if needed to prevent plot errors)
+tesco_and_msoas <- tesco_and_msoas %>%
+  mutate(across(all_of(positive_vars), ~replace_na(., 0)))
+
+# Set tmap mode to plot
+tmap_mode("plot")
+
+# Loop to generate maps for each variable
+for (var in positive_vars) {
+  print(
+    tm_shape(tesco_and_msoas[!is.na(tesco_and_msoas[[var]]), ]) +
+      tm_polygons(
+        fill = var,
+        fill.palette = "Blues",
+        title = paste("Proportion of", gsub("f_", "", var)),
+        legend.reverse = TRUE
+      ) +
+      tm_layout(
+        title = paste("Map of", gsub("f_", "", var), "in London"),
+        frame = FALSE,
+        bg.color = "grey95",
+        legend.outside = TRUE
+      ) +
+      tm_compass() +
+      tm_scale_bar()
+  )
+}
+
+
+```
+
+# Creating graph for the demographic variable.
+
+```{r}
+ggplot(year_msoa_grocery, aes(x = avg_age, y = energy_density)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkred") +
+  labs(
+    title = "Relationship Between Average Age and Energy Density",
+    x = "Average Age of Residents",
+    y = "Energy Density (kcal/gram)"
+  ) +
+  theme_minimal()
+```
