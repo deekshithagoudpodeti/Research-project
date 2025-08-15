@@ -2,7 +2,9 @@
 title: "Research Project"
 author: "Deekshitha Goud Podeti"
 date: "2025-08-15"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -65,7 +67,6 @@ model_coef <- tidy(full_model)
 model_coef_clean <- model_coef %>%
   filter(!is.na(estimate), term != "(Intercept)") %>%
   mutate(
-    # nicer labels (edit/extend as needed)
     label = dplyr::recode(term,
       f_readymade   = "Ready‑made meals",
       f_wine        = "Wine",
@@ -85,15 +86,14 @@ model_coef_clean <- model_coef %>%
       .default      = term
     ),
     direction = ifelse(estimate > 0, "Positive", "Negative"),
-    # order by absolute magnitude
     label = reorder(label, abs(estimate))
   )
 
-# --- Plot (object so we can save it twice)
+# --- Build the plot
 p_coef <- ggplot(model_coef_clean, aes(x = label, y = estimate, fill = direction)) +
   geom_col(width = 0.75) +
   coord_flip() +
-  scale_fill_manual(values = c("Positive" = "#D55E00", "Negative" = "#009E73")) + # CB-friendly
+  scale_fill_manual(values = c("Positive" = "#D55E00", "Negative" = "#009E73")) +
   labs(
     title = "Regression coefficients (full model)",
     x = "Predictor",
@@ -107,9 +107,13 @@ p_coef <- ggplot(model_coef_clean, aes(x = label, y = estimate, fill = direction
     panel.grid.minor = element_blank()
   )
 
-# --- Save to PDF (best for LaTeX) and PNG (for slides)
+# --- SHOW the plot in the knitted document
+p_coef
+
+# --- SAVE the plot to files for LaTeX/slides
 ggsave("figures/coe.pdf", plot = p_coef, width = 7, height = 5, device = cairo_pdf)
 ggsave("figures/coe.png", plot = p_coef, width = 7, height = 5, dpi = 300)
+
 ```
 
 
